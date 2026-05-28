@@ -3,6 +3,9 @@
 -- Monthly / chart aggregates go in sql/06_create_dashboard_tables.sql.
 
 DROP TABLE IF EXISTS gold_dataset_dates;
+DROP TABLE IF EXISTS gold_dim_date;
+DROP TABLE IF EXISTS gold_dim_product;
+DROP TABLE IF EXISTS gold_dim_unique_customer;
 DROP TABLE IF EXISTS gold_dim_customer;
 DROP TABLE IF EXISTS gold_fact_order_reviews;
 DROP TABLE IF EXISTS gold_fact_order_payments;
@@ -21,6 +24,42 @@ SELECT
 FROM silver_olist_orders_dataset o
 WHERE o.order_status = 'delivered'
   AND o.order_purchase_timestamp IS NOT NULL;
+
+
+-- -----------------------------------------------------------------------------
+-- gold_dim_date — calendar dimension for Power BI relationships
+-- One row per calendar date in the order purchase date range.
+-- -----------------------------------------------------------------------------
+CREATE TABLE gold_dim_date AS
+WITH date_bounds AS (
+    SELECT
+        MIN(order_purchase_timestamp)::date AS min_date,
+        MAX(order_purchase_timestamp)::date AS max_date
+    FROM silver_olist_orders_dataset
+    WHERE order_purchase_timestamp IS NOT NULL
+),
+date_spine AS (
+    SELECT generate_series(min_date, max_date, INTERVAL '1 day')::date AS date_day
+    FROM date_bounds
+)
+SELECT
+    date_day,
+    TO_CHAR(date_day, 'YYYYMMDD')::integer AS date_key,
+    EXTRACT(YEAR FROM date_day)::integer AS year,
+    EXTRACT(QUARTER FROM date_day)::integer AS quarter,
+    ('Q' || EXTRACT(QUARTER FROM date_day)::integer) AS quarter_label,
+    EXTRACT(MONTH FROM date_day)::integer AS month,
+    TO_CHAR(date_day, 'FMMonth') AS month_name,
+    TO_CHAR(date_day, 'Mon') AS month_short_name,
+    TO_CHAR(date_day, 'YYYY-MM') AS year_month,
+    TO_CHAR(date_day, 'YYYYMM')::integer AS year_month_key,
+    DATE_TRUNC('month', date_day)::date AS month_start_date,
+    EXTRACT(WEEK FROM date_day)::integer AS week_of_year,
+    EXTRACT(ISODOW FROM date_day)::integer AS day_of_week,
+    TO_CHAR(date_day, 'FMDay') AS day_name,
+    TO_CHAR(date_day, 'Dy') AS day_short_name,
+    (EXTRACT(ISODOW FROM date_day)::integer IN (6, 7)) AS is_weekend
+FROM date_spine;
 
 
 -- -----------------------------------------------------------------------------
@@ -49,6 +88,69 @@ LEFT JOIN (
     GROUP BY geolocation_zip_code_prefix
 ) g
     ON c.customer_zip_code_prefix = g.geolocation_zip_code_prefix;
+
+
+-- -----------------------------------------------------------------------------
+-- gold_dim_unique_customer — real customer dimension for Power BI relationships
+-- Olist: customer_id is order-level; customer_unique_id is the real person.
+-- One row per customer_unique_id, with representative location and lifecycle fields.
+-- -----------------------------------------------------------------------------
+CREATE TABLE gold_dim_unique_customer AS
+SELECT
+    c.customer_unique_id,
+    COUNT(DISTINCT c.customer_id) AS customer_id_count,
+    COUNT(DISTINCT o.order_id) AS order_count,
+    COUNT(DISTINCT o.order_id) FILTER (WHERE o.order_status = 'delivered') AS delivered_order_count,
+    MIN(o.order_purchase_timestamp) AS first_order_purchase_timestamp,
+    MAX(o.order_purchase_timestamp) AS last_order_purchase_timestamp,
+    MIN(o.order_purchase_timestamp) FILTER (WHERE o.order_status = 'delivered') AS first_delivered_order_purchase_timestamp,
+    MAX(o.order_purchase_timestamp) FILTER (WHERE o.order_status = 'delivered') AS last_delivered_order_purchase_timestamp,
+    MODE() WITHIN GROUP (ORDER BY c.customer_zip_code_prefix) AS customer_zip_code_prefix,
+    MODE() WITHIN GROUP (ORDER BY c.customer_city) AS customer_city,
+    MODE() WITHIN GROUP (ORDER BY c.customer_state) AS customer_state,
+    AVG(c.customer_geo_lat) AS customer_geo_lat,
+    AVG(c.customer_geo_lng) AS customer_geo_lng,
+    (COUNT(DISTINCT c.customer_id) > 1) AS has_multiple_customer_ids,
+    (
+        COUNT(DISTINCT c.customer_zip_code_prefix) > 1
+        OR COUNT(DISTINCT c.customer_city) > 1
+        OR COUNT(DISTINCT c.customer_state) > 1
+    ) AS has_multiple_locations
+FROM gold_dim_customer c
+LEFT JOIN silver_olist_orders_dataset o
+    ON c.customer_id = o.customer_id
+WHERE c.customer_unique_id IS NOT NULL
+GROUP BY c.customer_unique_id;
+
+
+-- -----------------------------------------------------------------------------
+-- gold_dim_product — product dimension for Power BI relationships
+-- One row per product_id, with translated category and physical attributes.
+-- -----------------------------------------------------------------------------
+CREATE TABLE gold_dim_product AS
+SELECT
+    p.product_id,
+    p.product_category_name,
+    p.product_category_name_english AS category,
+    p.missing_translation_flag,
+    p.product_name_lenght,
+    p.product_description_lenght,
+    p.product_photos_qty,
+    p.product_weight_g,
+    CASE
+        WHEN p.product_weight_g IS NOT NULL
+        THEN p.product_weight_g / 1000.0
+    END AS product_weight_kg,
+    p.product_length_cm,
+    p.product_height_cm,
+    p.product_width_cm,
+    CASE
+        WHEN p.product_length_cm IS NOT NULL
+         AND p.product_height_cm IS NOT NULL
+         AND p.product_width_cm IS NOT NULL
+        THEN p.product_length_cm * p.product_height_cm * p.product_width_cm
+    END AS product_volume_cm3
+FROM silver_products_join_category_translation p;
 
 
 -- -----------------------------------------------------------------------------
@@ -231,6 +333,9 @@ WHERE o.order_status = 'delivered'
 -- -----------------------------------------------------------------------------
 -- Optional indexes (uncomment for faster dashboard / gold queries)
 -- -----------------------------------------------------------------------------
+-- CREATE INDEX idx_gold_dim_date_date_day ON gold_dim_date (date_day);
+-- CREATE INDEX idx_gold_dim_product_product_id ON gold_dim_product (product_id);
+-- CREATE INDEX idx_gold_dim_unique_customer_unique_id ON gold_dim_unique_customer (customer_unique_id);
 -- CREATE INDEX idx_gold_fact_orders_purchase_month ON gold_fact_orders (order_purchase_month);
 -- CREATE INDEX idx_gold_fact_orders_is_delivered ON gold_fact_orders (is_delivered);
 -- CREATE INDEX idx_gold_fact_order_items_purchase_month ON gold_fact_order_items (order_purchase_month);
