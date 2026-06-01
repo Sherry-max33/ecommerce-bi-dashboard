@@ -58,6 +58,15 @@ python -m src.load_to_postgres
 
 Run in order: `01_pandas_eda` → `02_kpi_testing` → `03_forecasting_ml` → `04_business_insights`.
 
+Notebooks are committed **without cell outputs** so GitHub can render the Preview tab. After running locally, strip before push:
+
+```bash
+pip install nbstripout
+nbstripout notebooks/*.ipynb
+# optional: auto-strip on every commit
+nbstripout --install
+```
+
 ## License
 
 Educational / portfolio use. Olist dataset terms apply to source data.
