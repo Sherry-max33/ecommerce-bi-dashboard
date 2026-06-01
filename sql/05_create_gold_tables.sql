@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS gold_fact_order_reviews;
 DROP TABLE IF EXISTS gold_fact_order_payments;
 DROP TABLE IF EXISTS gold_fact_order_items;
 DROP TABLE IF EXISTS gold_fact_orders;
+DROP TABLE IF EXISTS gold_customer_rfm;
 DROP TABLE IF EXISTS gold_customer_delivered_orders;
 
 
@@ -331,11 +332,78 @@ WHERE o.order_status = 'delivered'
 
 
 -- -----------------------------------------------------------------------------
+-- gold_customer_rfm — customer-level RFM segmentation for Power BI
+-- One row per customer_unique_id; delivered orders only.
+-- -----------------------------------------------------------------------------
+CREATE TABLE gold_customer_rfm AS
+WITH customer_metrics AS (
+    SELECT
+        o.customer_unique_id,
+        MAX(o.order_purchase_date) AS last_order_date,
+        (d.as_of_date - MAX(o.order_purchase_date))::integer AS recency_days,
+        COUNT(DISTINCT o.order_id) AS frequency_orders,
+        SUM(o.order_gmv) AS monetary_gmv,
+        SUM(o.order_gmv) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS avg_order_value
+    FROM gold_fact_orders o
+    CROSS JOIN gold_dataset_dates d
+    WHERE o.is_delivered
+      AND o.customer_unique_id IS NOT NULL
+      AND o.order_purchase_date IS NOT NULL
+    GROUP BY
+        o.customer_unique_id,
+        d.as_of_date
+),
+rfm_scores AS (
+    SELECT
+        customer_unique_id,
+        last_order_date,
+        recency_days,
+        frequency_orders,
+        monetary_gmv,
+        avg_order_value,
+        NTILE(5) OVER (ORDER BY recency_days DESC) AS r_score,
+        CASE
+            WHEN frequency_orders >= 5 THEN 5
+            WHEN frequency_orders = 4 THEN 4
+            WHEN frequency_orders = 3 THEN 3
+            WHEN frequency_orders = 2 THEN 2
+            ELSE 1
+        END AS f_score,
+        NTILE(5) OVER (ORDER BY monetary_gmv ASC) AS m_score
+    FROM customer_metrics
+)
+SELECT
+    customer_unique_id,
+    last_order_date,
+    recency_days,
+    frequency_orders,
+    monetary_gmv,
+    avg_order_value,
+    r_score,
+    f_score,
+    m_score,
+    (r_score * 100 + f_score * 10 + m_score) AS rfm_code,
+    (r_score * 0.5 + f_score * 0.3 + m_score * 0.2) AS rfm_weighted_score,
+    CASE
+        WHEN r_score >= 4 AND frequency_orders >= 2 AND m_score >= 4 THEN 'Champions'
+        WHEN r_score >= 3 AND frequency_orders >= 2 THEN 'Loyal Customers'
+        WHEN r_score <= 2 AND (frequency_orders >= 2 OR m_score >= 3) THEN 'At Risk'
+        WHEN r_score <= 2 AND frequency_orders = 1 AND m_score <= 2 THEN 'Hibernating'
+        WHEN r_score >= 3 AND frequency_orders = 1 AND m_score >= 4 THEN 'High-Value Customers'
+        WHEN r_score >= 4 AND frequency_orders = 1 THEN 'Recent Customers'
+        ELSE 'Other Customers'
+    END AS customer_segment
+FROM rfm_scores;
+
+
+-- -----------------------------------------------------------------------------
 -- Optional indexes (uncomment for faster dashboard / gold queries)
 -- -----------------------------------------------------------------------------
 -- CREATE INDEX idx_gold_dim_date_date_day ON gold_dim_date (date_day);
 -- CREATE INDEX idx_gold_dim_product_product_id ON gold_dim_product (product_id);
 -- CREATE INDEX idx_gold_dim_unique_customer_unique_id ON gold_dim_unique_customer (customer_unique_id);
+-- CREATE INDEX idx_gold_customer_rfm_unique_id ON gold_customer_rfm (customer_unique_id);
+-- CREATE INDEX idx_gold_customer_rfm_segment ON gold_customer_rfm (customer_segment);
 -- CREATE INDEX idx_gold_fact_orders_purchase_month ON gold_fact_orders (order_purchase_month);
 -- CREATE INDEX idx_gold_fact_orders_is_delivered ON gold_fact_orders (is_delivered);
 -- CREATE INDEX idx_gold_fact_order_items_purchase_month ON gold_fact_order_items (order_purchase_month);
