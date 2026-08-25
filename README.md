@@ -1,6 +1,6 @@
 # Olist E-Commerce Analytics
 
-**End-to-end business intelligence platform for Olist Brazilian marketplace performance, customer behavior, and revenue forecasting across Sep 2016 – Aug 2018.**
+**End-to-end business intelligence platform for the Olist Brazilian e-commerce marketplace, built with PostgreSQL, Python, and Power BI, featuring dimensional modeling, KPI dashboards, customer segmentation, and GMV forecasting.**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-4169E1?logo=postgresql&logoColor=white)
