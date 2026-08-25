@@ -67,19 +67,21 @@ flowchart LR
         GOLD[Gold Layer]
         DASH[Dashboard Marts]
         ML[ML Output Tables]
+        RAW --> SILVER --> GOLD
+        GOLD --> DASH
+        GOLD --> ML
     end
 
     subgraph Analytics
-        NB[Notebooks]
-        RF[Random Forest Model]
+        NB[Notebooks] --> RF[Random Forest Model]
     end
 
-    subgraph Delivery
-        PBI[Power BI Dashboard]
-    end
+    PBI[Power BI Dashboard]
 
-    CSV --> RAW --> SILVER --> GOLD --> DASH --> PBI
-    GOLD --> NB --> RF --> ML --> PBI
+    CSV --> RAW
+    GOLD --> NB
+    RF --> ML
+    Warehouse --> PBI
 ```
 
 
@@ -341,7 +343,3 @@ The ML pipeline (`03_forecasting_ml.ipynb`) follows a rigorous time-series workf
 | `[reports/README.md](reports/README.md)`                           | PDF report deliverable                     |
 
 
----
-
-
-**Built with SQL · Python · scikit-learn · Power BI**
