@@ -173,6 +173,7 @@ CREATE TABLE dash_category_monthly AS
 SELECT
     report_month,
     category,
+    category_label,
     category_gmv,
     category_order_count,
     category_rank
@@ -180,6 +181,7 @@ FROM (
     SELECT
         i.order_purchase_month AS report_month,
         i.product_category_name_english AS category,
+        i.product_category_label AS category_label,
         SUM(i.line_gmv) AS category_gmv,
         COUNT(DISTINCT i.order_id) AS category_order_count,
         ROW_NUMBER() OVER (
@@ -191,7 +193,8 @@ FROM (
       AND i.order_purchase_month IS NOT NULL
     GROUP BY
         i.order_purchase_month,
-        i.product_category_name_english
+        i.product_category_name_english,
+        i.product_category_label
 ) ranked
 ORDER BY report_month, category_rank;
 

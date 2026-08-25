@@ -133,6 +133,7 @@ SELECT
     p.product_id,
     p.product_category_name,
     p.product_category_name_english AS category,
+    INITCAP(REPLACE(COALESCE(p.product_category_name_english, 'unknown'), '_', ' ')) AS category_label,
     p.missing_translation_flag,
     p.product_name_lenght,
     p.product_description_lenght,
@@ -259,6 +260,7 @@ SELECT
     o.is_delivery_inconsistency,
     p.product_category_name,
     p.product_category_name_english,
+    INITCAP(REPLACE(COALESCE(p.product_category_name_english, 'unknown'), '_', ' ')) AS product_category_label,
     p.missing_translation_flag
 FROM raw_olist_order_items_dataset oi
 LEFT JOIN silver_olist_orders_dataset o

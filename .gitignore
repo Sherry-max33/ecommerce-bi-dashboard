@@ -17,6 +17,7 @@ build/
 .ipynb_checkpoints/
 
 # Data (keep raw in repo if small; ignore large/processed outputs)
+E-Commerce_Data_Simulation.xlsx
 data/processed/*
 !data/processed/.gitkeep
 data/output/*
